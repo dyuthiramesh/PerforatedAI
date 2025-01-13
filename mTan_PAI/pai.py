@@ -206,14 +206,13 @@ if __name__ == '__main__':
 
     # model = torch.load("correctPAIModel.pt")
     
-    model = PN.loadPAIModel(model, 'best_model_pai.pt').to('cuda')
+    model = PN.loadPAIModel2(model, 'best_model_pai.pt').to('cuda')
     print(model)
-    
-    torch.save(model, "SecondModel.pt")
+    # sys.exit()
+    torch.save(model, "CheckingModel.pt")
     params = (list(rec.parameters()) + list(dec.parameters()) + list(classifier.parameters()))
     print('parameters:', utils.count_parameters(rec), utils.count_parameters(dec), utils.count_parameters(classifier))
     sys.exit()
-
     if(args.justTest):
         model.eval()
         test_loss, test_acc, test_auc = utils.evaluate_classifier(

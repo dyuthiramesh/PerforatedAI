@@ -1,4 +1,3 @@
-import torch
 import argparse
 import numpy as np
 import torch
@@ -6,14 +5,13 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 import time
-
+from gru import BidirectionalGRU, StandardGRU
 from perforatedai import pb_network as PN
 from perforatedai import pb_globals as PBG
-
+import sys
 from random import SystemRandom
 import modelsPAI2 as models
 import utils
-import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--niters', type=int, default=2000)
@@ -52,7 +50,6 @@ parser.add_argument('--classify-pertp', action='store_true')
 parser.add_argument('--multiplier', type=float, default=1)
 
 args = parser.parse_args()
-
 
 class GRUCellProcessor():
     #Post processing does eventually need to return h_t and c__t, but h_t gets modified py the PB
@@ -111,6 +108,33 @@ class ReverseGRUCellProcessor():
             if(not getattr(self,var,None) is None):
                 delattr(self,var)
 
+bidirectional_gru = BidirectionalGRU(args.rec_hidden, args.rec_hidden)
+PBG.inputDimensions = [-1, -1, 0]
+
+PBG.modulesToConvert.append(models.mtan_time_embedder)
+PBG.modulesToConvert.append(models.multiTimeAttention)
+# PBG.modulesToConvert.append(nn.GRU)
+PBG.modulesToConvert.append(StandardGRU)
+PBG.modulesToConvert.append(BidirectionalGRU)
+PBG.modulesToConvert.append(models.reverseGru)
+
+PBG.modluesWithProcessing.append(nn.GRU)
+PBG.moduleProcessingClasses.append(GRUCellProcessor)
+PBG.modluesWithProcessing.append(StandardGRU)
+PBG.moduleProcessingClasses.append(GRUCellProcessor)
+PBG.modluesWithProcessing.append(BidirectionalGRU)
+PBG.moduleProcessingClasses.append(GRUCellProcessor)
+# PBG.moduleProcessingClasses.append(RerverseGRUCellProcessor)
+
+# PBG.modluesWithProcessing.append(bidirectional_gru.forward_gru)
+# PBG.modluesWithProcessing.append(bidirectional_gru.backward_gru)
+PBG.modluesWithProcessing.append(models.reverseGru)
+PBG.moduleProcessingClasses.append(ReverseGRUCellProcessor)
+
+# PBG.moduleProcessingClasses.append(bidirectional_gru.forward_gru)
+# PBG.moduleProcessingClasses.append(bidirectional_gru.backward_gru)
+
+#Define a full model so it all gets converted
 class fullModel(nn.Module):
     def __init__(self, rec, dec, classifier):
         super(fullModel, self).__init__()
@@ -178,31 +202,99 @@ if __name__ == '__main__':
             embed_time=embed_time, learn_emb=args.learn_emb, num_heads=args.dec_num_heads, device=device).to(device)
     classifier = models.create_classifier(args.latent_dim, internal, args.rec_hidden).to(device)
     
-    # model = fullModel(rec, dec, classifier)
-    model = torch.load("CheckingModelCopied.pt")
-    # model = PN.loadPAIModel(model, 'best_model_pai.pt').to('cuda')
-    # model = PN.loadPAIModel(model, 'best_model_pai.pt').to('cuda')
-    
+    model = fullModel(rec, dec, classifier)
+
     print(model)
-    for name, buffer in model.named_buffers():
-        print(f"Buffer Name: {name}, Buffer Value: {buffer}")
-    
-    rec=model.rec
-    dec = model.dec
-    classifier = model.classifier
-    for item in [rec,dec,classifier]:
-        for name, param in item.named_parameters():
-            print(name)
-            print(param)
 
     params = (list(rec.parameters()) + list(dec.parameters()) + list(classifier.parameters()))
-    print('parameters:', utils.count_parameters(rec), utils.count_parameters(dec), utils.count_parameters(classifier))
+    print('parameters:', utils.count_parameters(rec), utils.count_parameters(dec), utils.count_parameters(classifier)) 
+
+    optimizer = optim.Adam(params, lr=args.lr)
     
-    if(args.justTest):
+    # NOTE: Might be a good idea to play around with a scheduler for PAI as well
+
+
+    criterion = nn.CrossEntropyLoss()
+    
+    if args.fname is not None:
+        checkpoint = torch.load(args.fname)
+        rec.load_state_dict(checkpoint['rec_state_dict'])
+        dec.load_state_dict(checkpoint['dec_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        print('loading saved weights', checkpoint['epoch'])
+
+    best_val_loss = float('inf')
+    total_time = 0.
+    best_val_auc = 0
+    best_val_acc = float("-inf")
+    print(rec)
+    print(dec)
+    print(classifier)
+    total_time = 0.
+    for itr in range(65, args.niters + 1):
+        train_recon_loss, train_ce_loss = 0, 0
+        mse = 0
+        train_n = 0
+        train_acc = 0
+        #avg_reconst, avg_kl, mse = 0, 0, 0
+        if args.kl:
+            wait_until_kl_inc = 10
+            if itr < wait_until_kl_inc:
+                kl_coef = 0.
+            else:
+                kl_coef = (1-0.99** (itr - wait_until_kl_inc))
+        else:
+            kl_coef = 1
+        start_time = time.time()
+        for train_batch, label in train_loader:
+            train_batch, label = train_batch.to(device), label.to(device)
+            batch_len  = train_batch.shape[0]
+            observed_data, observed_mask, observed_tp \
+                = train_batch[:, :, :dim], train_batch[:, :, dim:2*dim], train_batch[:, :, -1]
+            pred_x, pred_y, qz0_mean, qz0_logvar = model(observed_data, observed_mask, observed_tp)
+            
+            # compute loss
+            logpx, analytic_kl = utils.compute_losses(
+                dim, train_batch, qz0_mean, qz0_logvar, pred_x, args, device)
+            recon_loss = -(torch.logsumexp(logpx - kl_coef * analytic_kl, dim=0).mean(0) - np.log(args.k_iwae))
+            label = label.unsqueeze(0).repeat_interleave(args.k_iwae, 0).view(-1)
+            ce_loss = criterion(pred_y, label)
+            loss = recon_loss + args.alpha*ce_loss
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            
+            train_ce_loss += ce_loss.item() * batch_len
+            train_recon_loss += recon_loss.item() * batch_len
+            train_acc += (pred_y.argmax(1) == label).sum().item()/args.k_iwae
+            train_n += batch_len
+            mse += (utils.mean_squared_error(observed_data, pred_x.mean(0), 
+                                      observed_mask) * batch_len).item()
+        total_time += time.time() - start_time
+        model.eval()
+        val_loss, val_acc, val_auc = utils.evaluate_classifier(
+            model.rec, val_loader, args=args, classifier=model.classifier, reconst=True, num_sample=1, dim=dim, device=device)
+        model.train()
+
+        if val_auc >= best_val_auc:
+            print("=============================================")
+            print(itr)
+            print(best_val_auc)
+            print("Saving best val auc: ", val_auc)
+            print("=============================================")
+            best_val_auc = val_auc
+            if args.save:
+                torch.save(model, 'trainedCustom.pt')
         model.eval()
         test_loss, test_acc, test_auc = utils.evaluate_classifier(
             model.rec, test_loader, args=args, classifier=model.classifier, reconst=True, num_sample=1, dim=dim, device=device)
-        print('test_acc')
-        print(test_acc)
-        print('test_auc')
-        print(test_auc)
+        model.train()
+        print('Iter: {}, recon_loss: {:.4f}, ce_loss: {:.4f}, acc: {:.4f}, mse: {:.4f}, val_loss: {:.4f}, val_acc: {:.4f}, test_acc: {:.4f}, test_auc: {:.4f}'
+              .format(itr, train_recon_loss/train_n, train_ce_loss/train_n, 
+                      train_acc/train_n, mse/train_n, val_loss, val_acc, test_acc, test_auc))
+        
+    if args.save:
+        torch.save(model, "trainedFinal.pt")
+
+    print(best_val_loss)
+    print(total_time)
