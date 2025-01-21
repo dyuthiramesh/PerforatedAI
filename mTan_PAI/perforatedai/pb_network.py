@@ -139,6 +139,48 @@ def loadPAIModel(net, filename):
         if(numCycles > 0):
             module.simulateCycles(numCycles, nodeCount)
             
+        module.register_buffer('skipWeights', torch.zeros(stateDict[moduleName + '.skipWeights'].shape))
+        # module.register_buffer('skipWeights', stateDict[moduleName + '.skipWeights'])
+        module.register_buffer('moduleID', stateDict[moduleName + '.moduleID'])
+        module.register_buffer('viewTuple', stateDict[moduleName + '.viewTuple'])
+    
+    # torch.save(net,"trainedFinalBufferIncluded.pt")
+    net.load_state_dict(stateDict)
+    
+    return net
+
+def loadPAIModel2(net, filename):
+    net = convertNetwork(net)
+    
+    stateDict = load_file(filename)
+    
+    pbModules = getPAIModules(net,0)
+
+    # print(net)
+    if(pbModules == []):
+        print('No PAI modules were found something went wrong with convert network')
+        # sys.exit()
+    
+    for module in pbModules:
+        
+        moduleName = module.name
+       
+        if moduleName[:5] == 'model':
+            #strip "model."
+            moduleName = moduleName[6:]
+        # If it was a dataparallel also remove 'module' from the name
+        if moduleName[:6] == 'module':
+            #strip the "module."
+            moduleName = moduleName[7:]        
+        # Then instantiate as many Dendrites as were created during training
+        numCycles = int(stateDict[moduleName + '.numCycles'].item())
+       
+        nodeCount = 10
+        #also extract view tuple
+        
+        if(numCycles > 0):
+            module.simulateCycles(numCycles, nodeCount)
+            
         # module.register_buffer('skipWeights', torch.zeros(stateDict[moduleName + '.skipWeights'].shape))
         module.register_buffer('skipWeights', stateDict[moduleName + '.skipWeights'])
         module.register_buffer('moduleID', stateDict[moduleName + '.moduleID'])

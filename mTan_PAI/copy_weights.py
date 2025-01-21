@@ -194,9 +194,9 @@ if __name__ == '__main__':
     params = (list(rec.parameters()) + list(dec.parameters()) + list(classifier.parameters()))
     print('Before loading parameters:', utils.count_parameters(rec), utils.count_parameters(dec), utils.count_parameters(classifier))
     model = PN.loadPAIModel(model, 'best_model_pai.pt').to('cuda')
-    model = torch.load("customPAImtan.pt")
+    # model = torch.load("customPAImtan.pt")
     print("The old model used is: ",model)
-    network = torch.load("SecondModel.pt")
+    network = torch.load("CheckingModel.pt")
     # network = PN.loadPAIModel(model, "finalPAIcustom.pt")
 
     print("The new network that is made is: ",network)
@@ -372,7 +372,7 @@ if __name__ == '__main__':
     for name, buffer in network.named_buffers():
         print(f"Buffer Name: {name}, Buffer Value: {buffer}")
 
-    torch.save(network, "SecondCopiedModel.pt")
+    torch.save(network, "CheckingModelCopied.pt")
     # print("Size of the weights are: ",(rec_gru.weight_ih_l0_reverse.shape))
     # print(type(rec_gru))
     # for name, model in rec_gru.named_parameters():

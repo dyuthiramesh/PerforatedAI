@@ -179,7 +179,7 @@ if __name__ == '__main__':
     classifier = models.create_classifier(args.latent_dim, internal, args.rec_hidden).to(device)
     
     # model = fullModel(rec, dec, classifier)
-    model = torch.load("SecondModelCopied.pt")
+    model = torch.load("CheckingModelCopied.pt")
     # model = PN.loadPAIModel(model, 'best_model_pai.pt').to('cuda')
     # model = PN.loadPAIModel(model, 'best_model_pai.pt').to('cuda')
     
