@@ -20,7 +20,7 @@ python test_model.py --alpha 100 --lr 0.0001 --batch-size 50 --rec-hidden 256 --
 ```
 ## OR
 
-Run file test_model.py which loads CheckModelCopied.pt which has weights and buffers copied from the original model and it has values printed of all parameters and buffers to cross check
+Run file test_model.py which loads SecondCopiedModel.pt which has weights and buffers copied from the original model and it has values printed of all parameters and buffers to cross check
 
 ```bash
 python test_model.py --alpha 100 --lr 0.0001 --batch-size 50 --rec-hidden 256 --gen-hidden 50 --latent-dim 20 --enc mtan_rnn --dec mtan_rnn --n 8000 --quantization 0.016 --save 1 --classif --norm --kl --learn-emb --k-iwae 1 --dataset physionet --multiplier 0.125 --justTest 1
