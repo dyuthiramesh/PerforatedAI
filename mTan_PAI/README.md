@@ -8,13 +8,17 @@ python pai.py --alpha 100 --lr 0.0001 --batch-size 50 --rec-hidden 256 --gen-hid
 ```
 
 
+
 ### 2. Copy weights to saved model CheckModel.pt from weights stored in file best_model_pai.pt
+
 ```bash
 python copy_weights.py --alpha 100 --lr 0.0001 --batch-size 50 --rec-hidden 256 --gen-hidden 50 --latent-dim 20 --enc mtan_rnn --dec mtan_rnn --n 8000 --quantization 0.016 --save 1 --classif --norm --kl --learn-emb --k-iwae 1 --dataset physionet --multiplier 0.125 --justTest 1
 ```
 
 
+
 ### 3. Run file test_model.py to get evalutation of model saved that is CheckModelCopied.pt
+
 ```bash
 python test_model.py --alpha 100 --lr 0.0001 --batch-size 50 --rec-hidden 256 --gen-hidden 50 --latent-dim 20 --enc mtan_rnn --dec mtan_rnn --n 8000 --quantization 0.016 --save 1 --classif --norm --kl --learn-emb --k-iwae 1 --dataset physionet --multiplier 0.125 --justTest 1
 ```
